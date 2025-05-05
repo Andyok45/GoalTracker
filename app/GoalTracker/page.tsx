@@ -3,7 +3,7 @@ import React, { useEffect, useRef } from 'react'
 import { GiStairsGoal } from "react-icons/gi";
 import { motion } from "framer-motion";
 import { useState } from "react";
-
+import confetti from "canvas-confetti";
 
 interface Milestone {
   text: string;
@@ -24,7 +24,6 @@ interface Comment {
   text: string;
   timestamp: string;
 }
-
 
 
 const initialGoals: GoalData[] = [
@@ -135,11 +134,10 @@ interface CommentsModalProps {
   darkMode: boolean;
 }
 
+// ------------------------------------------------------------------ //
 function CommentsModal({ isOpen, onClose, goalId, comments, onAddComment, darkMode }: CommentsModalProps) {
-
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const [newComment, setNewComment] = useState<string>("");
-
   useEffect(() => {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [comments]);
@@ -215,6 +213,7 @@ function CommentsModal({ isOpen, onClose, goalId, comments, onAddComment, darkMo
   );
 }
 
+// ------------------------------------------------------------------ //
 interface GoalCardProps {
   id: number;
   title: string;
@@ -231,6 +230,7 @@ interface GoalCardProps {
 
 
 
+// ---------------------------------------------------------------------- //
 function GoalCard({
   id,
   title,
@@ -246,16 +246,37 @@ function GoalCard({
   // Remove the local checked state completely
   // The checkboxes will now use milestone.completed directly
 
+  const handleMilestoneToggle = (index: number) => {
+    onToggleMilestone(id, index);
+
+    // Trigger confetti effect when completing a milestone
+    if (!milestones[index].completed) {
+      // Simple celebration effect
+      const element = document.getElementById(`milestone-${id}-${index}`);
+      if (element) {
+        element.classList.add('pulse-animation');
+        setTimeout(() => {
+          element.classList.remove('pulse-animation');
+        }, 700);
+      }
+    }
+  };
+
   const handleDelete = (): void => {
     onDelete(id);
   };
 
   return (
-    <div
-      onClick={onEditClick.bind(null, id)} // Call onEditClick when the card is clicked
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      transition={{ duration: 0.3 }}
+      whileHover={{ scale: 1.02, transition: { duration: 0.2 } }}
+      onClick={onEditClick.bind(null, id)}
       className={`shadow-md rounded-xl p-6 w-full h-[370px] flex flex-col justify-between relative transition-colors ${
         darkMode ? "bg-slate-600 text-white" : "bg-white text-black"
-      }`}
+      } hover:shadow-xl`}
     >
       {/* Group Label */}
       <span
@@ -290,11 +311,11 @@ function GoalCard({
       <div className="overflow-y-auto flex-1 pr-1 my-2">
         <ul onClick={(e) => e.stopPropagation()} className="space-y-2">
           {milestones.map((milestone, index) => (
-            <li key={index} className="flex items-start gap-2">
+            <li key={index} className="flex items-start gap-2" id={`milestone-${id}-${index}`}>
               <input
                 type="checkbox"
                 checked={milestone.completed}
-                onChange={() => onToggleMilestone(id, index)}
+                onChange={() => handleMilestoneToggle(index)}
                 className="mt-1 w-4 h-4"
               />
               <span
@@ -316,24 +337,42 @@ function GoalCard({
       {/* Footer - Count completed milestones directly */}
       <hr className={`my-2 ${darkMode ? "border-gray-500" : ""}`} />
       <div className="flex justify-between items-center mt-2">
-        <p
-          className={`text-sm ${
-            darkMode ? "text-gray-300" : "text-gray-500"
-          }`}
-        >
-          {milestones.filter(m => m.completed).length} of {milestones.length} completed
-        </p>
+        <div className="w-[65%]">
+          <p className={`text-xs ${darkMode ? "text-gray-300" : "text-gray-500"} mb-1`}>
+            {milestones.filter(m => m.completed).length} of {milestones.length} completed
+          </p>
+          <div className="w-full bg-gray-200 rounded-full h-1.5">
+            <motion.div
+              initial={{ width: 0 }}
+              animate={{ width: `${(milestones.filter(m => m.completed).length / milestones.length) * 100}%` }}
+              transition={{ duration: 0.5, ease: "easeOut" }}
+              className="bg-blue-500 h-1.5 rounded-full"
+            />
+          </div>
+        </div>
         <div onClick={(e) => e.stopPropagation()} className="flex gap-3">
-          <button title="Comment" onClick={() => onCommentClick(id)}>
+          <button
+            title="Comment"
+            onClick={() => onCommentClick(id)}
+            className="hover:scale-110 transition-transform duration-150"
+          >
             💬
           </button>
-          <button title="Delete" onClick={handleDelete}>🗑️</button>
+          <button
+            title="Delete"
+            onClick={handleDelete}
+            className="hover:scale-110 transition-transform duration-150 text-red-500 opacity-70 hover:opacity-100"
+          >
+            🗑️
+          </button>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
+
 }
 
+// ------------------------------------------------------------------ //
 
 interface AddGoalModalProps {
   isOpen: boolean;
@@ -342,10 +381,12 @@ interface AddGoalModalProps {
   darkMode: boolean;
   editingGoal: GoalData | null;
   onUpdateGoal?: (goal: GoalData) => void;
+  allGoals?: GoalData[];
 }
 
+// ------------------------------------------------------------------ //
 
-function AddGoalModal({ isOpen, onClose, onAddGoal, darkMode, editingGoal, onUpdateGoal }: AddGoalModalProps) {
+function AddGoalModal({ isOpen, onClose, onAddGoal, darkMode, editingGoal, onUpdateGoal, allGoals }: AddGoalModalProps) {
   const [newGoal, setNewGoal] = React.useState<Omit<GoalData, 'id'>>({
     title: "",
     description: "",
@@ -356,23 +397,56 @@ function AddGoalModal({ isOpen, onClose, onAddGoal, darkMode, editingGoal, onUpd
 
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const isEditMode = Boolean(editingGoal);
+  const [customGroup, setCustomGroup] = useState<boolean>(false);
+  const [selectedGroup, setSelectedGroup] = useState<string>("");
 
-    // Reset form when modal is opened
-    React.useEffect(() => {
-      if (isOpen) {
-        if (editingGoal) {
-          setNewGoal(editingGoal);
-        } else {
-          setNewGoal({
-            title: "",
-            description: "",
-            group: "",
-            milestones: [{ text: "", completed: false }],
-            comments: []
-          });
-        }
+    // Get unique groups from all goals
+    const existingGroups = React.useMemo(() => {
+      const groups = new Set<string>();
+      allGoals?.forEach(goal => {
+        if (goal.group) groups.add(goal.group);
+      });
+      return Array.from(groups);
+    }, [allGoals]);
+
+  // Reset form when modal is opened or when editingGoal changes
+  React.useEffect(() => {
+    if (isOpen) {
+      if (editingGoal) {
+        setNewGoal(editingGoal);
+        setSelectedGroup(editingGoal.group);
+        setCustomGroup(!existingGroups.includes(editingGoal.group));
+      } else {
+        setNewGoal({
+          title: "",
+          description: "",
+          group: "",
+          milestones: [{ text: "", completed: false }],
+          comments: []
+        });
+        setSelectedGroup("");
+        setCustomGroup(false);
       }
-    }, [isOpen, editingGoal]);
+    }
+  }, [isOpen, editingGoal, existingGroups]);
+
+    // Update newGoal when selectedGroup changes
+    React.useEffect(() => {
+      if (!customGroup) {
+        setNewGoal(prev => ({ ...prev, group: selectedGroup }));
+      }
+    }, [selectedGroup, customGroup]);
+
+    const handleGroupChange = (e: React.ChangeEvent<HTMLSelectElement>): void => {
+      const value = e.target.value;
+      if (value === "custom") {
+        setCustomGroup(true);
+        setNewGoal(prev => ({ ...prev, group: "" }));
+      } else {
+        setCustomGroup(false);
+        setSelectedGroup(value);
+      }
+    };
 
   useEffect(() => {
     if (isOpen && dialogRef.current) {
@@ -473,18 +547,37 @@ function AddGoalModal({ isOpen, onClose, onAddGoal, darkMode, editingGoal, onUpd
           </div>
 
           <div className="mb-4">
-            <label className="block text-sm font-medium mb-1">Group</label>
-            <input
-              type="text"
-              name="group"
-              value={newGoal.group}
-              onChange={handleChange}
-              className={`w-full rounded p-2 border ${
-                darkMode ? "bg-slate-800 border-gray-500 text-white" : "border-gray-300"
-              }`}
-              required
-            />
-          </div>
+        <label className="block text-sm font-medium mb-1">Group</label>
+        <div className="flex gap-2">
+          <select
+            value={customGroup ? "custom" : selectedGroup}
+            onChange={handleGroupChange}
+            className={`w-full rounded p-2 border ${
+              darkMode ? "bg-slate-800 border-gray-500 text-white" : "border-gray-300"
+            }`}
+          >
+            <option value="" disabled>Select a group</option>
+            {existingGroups.map(group => (
+              <option key={group} value={group}>{group}</option>
+            ))}
+            <option value="custom">+ Add new group</option>
+          </select>
+        </div>
+
+        {customGroup && (
+          <input
+            type="text"
+            name="group"
+            value={newGoal.group}
+            onChange={handleChange}
+            placeholder="Enter new group name"
+            className={`w-full rounded p-2 border mt-2 ${
+              darkMode ? "bg-slate-800 border-gray-500 text-white" : "border-gray-300"
+            }`}
+            required
+          />
+        )}
+      </div>
 
           <div className="mb-4">
             <label className="block text-sm font-medium mb-2">Milestones</label>
@@ -552,6 +645,7 @@ function AddGoalModal({ isOpen, onClose, onAddGoal, darkMode, editingGoal, onUpd
 
 
 
+// ------------------------------------------------------------------ //
 function GoalTracker(): React.JSX.Element {
 
   const [darkMode, setDarkMode] = React.useState<boolean>(false);
@@ -561,6 +655,90 @@ function GoalTracker(): React.JSX.Element {
   const [selectedCategory, setSelectedCategory] = React.useState<string | null>(null);
   const [activeCommentGoalId, setActiveCommentGoalId] = useState<number | null>(null);
   const [editingGoal, setEditingGoal] = useState<GoalData | null>(null);
+  const [searchTerm, setSearchTerm] = useState<string>("");
+  const [searchFocused, setSearchFocused] = useState<boolean>(false);
+
+    // Custom CSS styles for animations
+    useEffect(() => {
+      // Add the styles to the document head
+      const styleElement = document.createElement('style');
+      styleElement.innerHTML = `
+        @keyframes pulse {
+          0% { transform: scale(1); }
+          50% { transform: scale(1.05); background-color: rgba(59, 130, 246, 0.1); }
+          100% { transform: scale(1); }
+        }
+
+        .pulse-animation {
+          animation: pulse 0.7s ease-in-out;
+        }
+
+        /* Improved scrollbar for dark/light mode */
+        ::-webkit-scrollbar {
+          width: 6px;
+          height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+          background: ${darkMode ? '#2d3748' : '#f1f1f1'};
+          border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+          background: ${darkMode ? '#4a5568' : '#c1c1c1'};
+          border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+          background: ${darkMode ? '#718096' : '#a0aec0'};
+        }
+
+        /* Smooth transitions */
+        .card-transition {
+          transition: all 0.3s ease;
+        }
+
+        /* Focus animation for search */
+        .search-focus {
+          box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
+        }
+      `;
+      document.head.appendChild(styleElement);
+
+      return () => {
+        document.head.removeChild(styleElement);
+      };
+    }, [darkMode]);
+
+
+    // Search function that prioritizes title matches then description matches
+    const SearchGoals = React.useMemo(() => {
+      let filtered = goals;
+
+      // First apply category filter if selected
+      if (selectedCategory) {
+        filtered = filtered.filter(goal => goal.group === selectedCategory);
+      }
+
+      // Then apply search term if present
+      if (searchTerm.trim()) {
+        const normalizedSearchTerm = searchTerm.toLowerCase().trim();
+
+        // Filter goals where either title or description contains the search term
+        filtered = filtered.filter(goal =>
+          goal.title.toLowerCase().includes(normalizedSearchTerm) ||
+          goal.description.toLowerCase().includes(normalizedSearchTerm)
+        );
+      }
+
+      return filtered;
+    }, [goals, selectedCategory, searchTerm]);
+
+
+      // Handle search input change
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    setSearchTerm(e.target.value);
+  };
 
 
   const handleEditClick = (id: number): void => {
@@ -584,7 +762,23 @@ function GoalTracker(): React.JSX.Element {
     setGoals(goals.map(goal => {
       if (goal.id === goalId) {
         const updatedMilestones = [...goal.milestones];
-        updatedMilestones[milestoneIndex].completed = !updatedMilestones[milestoneIndex].completed;
+        const wasCompleted = updatedMilestones[milestoneIndex].completed;
+        updatedMilestones[milestoneIndex].completed = !wasCompleted;
+
+        // Add completion date if being marked complete
+        if (!wasCompleted) {
+          // updatedMilestones[milestoneIndex].completedDate = new Date().toISOString();
+
+          // Show confetti animation when completing a milestone
+          const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff'];
+          // confetti({
+          //   particleCount: 100,
+          //   spread: 70,
+          //   origin: { y: 0.6 },
+          //   colors: colors
+          // });
+        }
+
         return { ...goal, milestones: updatedMilestones };
       }
       return goal;
@@ -673,10 +867,22 @@ function GoalTracker(): React.JSX.Element {
           <div className="relative">
             <input
               type="text"
-              placeholder="Search goals..."
-              className={`px-4 py-2 rounded-lg w-[400px] ${darkMode ? 'bg-gray-700 text-white' : 'bg-gray-100'} focus:outline-none transition-colors duration-200`}
+              placeholder="Search goals by title or description..."
+              value={searchTerm}
+              onChange={handleSearchChange}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setSearchFocused(false)}
+              className={`px-4 py-2 rounded-lg w-[400px] ${darkMode ? 'bg-gray-700 text-white' : 'bg-gray-100'} focus:outline-none transition-all duration-300 ${searchFocused ? 'search-focus ring-2 ring-blue-300 dark:ring-blue-600' : ''}`}
             />
-            <span className="absolute right-3 top-2.5">🔍</span>
+            <motion.span
+              animate={{
+                scale: searchFocused || searchTerm ? 1.2 : 1,
+                rotate: searchFocused ? [0, -10, 10, -10, 0] : 0
+              }}
+              transition={{ duration: 0.3 }}
+              className="absolute right-3 top-2.5">
+              🔍
+            </motion.span>
           </div>
         </div>
 
@@ -745,18 +951,31 @@ function GoalTracker(): React.JSX.Element {
             <h3 className="font-medium mb-2">Categories</h3>
             <ul className="space-y-1">
             {Object.entries(groupCounts).map(([group, count]) => (
-                <li
+                <motion.li
                   key={group}
+                  whileHover={{ scale: 1.03, x: 3 }}
+                  transition={{ type: "spring", stiffness: 300 }}
                   className={`flex items-center justify-between text-sm p-2 ${
                     selectedCategory === group
-                      ? 'bg-blue-100 text-blue-700'
-                      : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-                  } rounded cursor-pointer`}
+                      ? `${darkMode ? 'bg-blue-800 text-blue-100' : 'bg-blue-100 text-blue-700'}`
+                      : `hover:bg-gray-100 dark:hover:bg-gray-700`
+                  } rounded cursor-pointer transition-colors duration-200`}
                   onClick={() => handleCategorySelect(group)}
                 >
                   <span>{group}</span>
-                  <span className="bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full text-xs">{count}</span>
-                </li>
+                  <motion.span
+                    initial={false}
+                    animate={{
+                      scale: selectedCategory === group ? 1.1 : 1
+                    }}
+                    className={`${selectedCategory === group ?
+                      (darkMode ? 'bg-blue-600 text-blue-200' : 'bg-blue-500 text-white') :
+                      'bg-blue-100 text-blue-600'
+                    } px-2 py-0.5 rounded-full text-xs transition-colors duration-200`}
+                  >
+                    {count}
+                  </motion.span>
+                </motion.li>
               ))}
             </ul>
           </div>
@@ -769,17 +988,38 @@ function GoalTracker(): React.JSX.Element {
 
 
         {/* Right Content Area */}
-        <div
-            className={`flex-1 overflow-y-auto p-8 relative transition-all duration-300 ${
-              darkMode ? 'bg-gray-900 text-white' : ''
-            }`}
-          >
+        <div className={`flex-1 overflow-y-auto p-8 relative transition-all duration-300 ${
+          darkMode ? 'bg-gray-900 text-white' : ''
+        }`}>
+          {searchTerm.trim() && (
+            <div className="mb-4">
+              <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                Showing results for: "{searchTerm}"
+                {searchTerm && (
+                  <button
+                    className="ml-2 text-blue-500 underline"
+                    onClick={() => setSearchTerm("")}
+                  >
+                    Clear search
+                  </button>
+                )}
+              </p>
+            </div>
+          )}
+
+          {SearchGoals.length === 0 ? (
+            <div className="text-center py-10">
+              <p className={`text-xl ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                No goals found. {searchTerm ? "Try another search term." : "Add a new goal to get started!"}
+              </p>
+            </div>
+          ) : (
             <div className={`grid gap-6 transition-all duration-300 ${
               sideBarOpen
                 ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3'
                 : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-3'
             }`}>
-              {filteredGoals.map(goal => (
+              {SearchGoals.map(goal => (
                 <GoalCard
                   key={goal.id}
                   id={goal.id}
@@ -795,7 +1035,8 @@ function GoalTracker(): React.JSX.Element {
                   onToggleMilestone={toggleMilestone}
                 />
               ))}
-          </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -806,18 +1047,19 @@ function GoalTracker(): React.JSX.Element {
     </p>
   </footer>
 
-  {/* Add Goal Modal */}
-  <AddGoalModal
-    isOpen={showAddModal}
-    onClose={() => {
-      setShowAddModal(false);
-      setEditingGoal(null);
-    }}
-    onAddGoal={addGoal}
-    onUpdateGoal={updateGoal}
-    editingGoal={editingGoal}
-    darkMode={darkMode}
-  />
+      {/* Add Goal Modal - Update to pass all goals */}
+      <AddGoalModal
+        isOpen={showAddModal}
+        onClose={() => {
+          setShowAddModal(false);
+          setEditingGoal(null);
+        }}
+        onAddGoal={addGoal}
+        onUpdateGoal={updateGoal}
+        editingGoal={editingGoal}
+        darkMode={darkMode}
+        allGoals={goals}
+      />
 
   {/* Comments Modal */}
       {activeCommentGoalId !== null && (
@@ -835,6 +1077,7 @@ function GoalTracker(): React.JSX.Element {
 }
 
 export default GoalTracker;
+// ------------------------------------------------------------------ //
 
 
 
